@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 3
+names: ['Battery', 'Cable', 'PCB']
+
+roboflow:
+  workspace: ewaste-4uqej
+  project: ewaste-3-classes-xouac
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/ewaste-4uqej/ewaste-3-classes-xouac/dataset/2
