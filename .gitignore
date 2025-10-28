@@ -1,2 +1,4 @@
 .venv/
 datasets/
+runs\ewaste-3class
+runs\ewaste-3class-v2
