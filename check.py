@@ -2,11 +2,11 @@ import yaml, glob
 
 # a) what does the model believe?
 from ultralytics import YOLO
-m = YOLO("runs/ewaste-3class-v2/weights/best.pt")
+m = YOLO("runs/ewaste-3class-v3/weights/best.pt")
 print("model.names:", m.names)  # expect {0:'battery',1:'cable',2:'pcb'} in that exact order
 
 # b) what does your data.yaml say?
-with open("datasets/ewaste_v2/data.yaml","r") as f:
+with open("datasets/ewaste_v3/data.yaml","r") as f:
     d = yaml.safe_load(f)
 print("data.yaml names:", d.get("names"))
 

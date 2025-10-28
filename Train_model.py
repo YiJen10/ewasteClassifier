@@ -1,24 +1,22 @@
-# Train_model.py
 from ultralytics import YOLO
 import torch.multiprocessing as mp
 
 def main():
-    model = YOLO("yolov8n.pt")   # ok if it downloads yolo11n under the hood
-    model.train(
-        data="datasets/ewaste_v2/data.yaml",
-        epochs=60,
-        imgsz=640,
-        batch=-1,
-        device=0,          # you have GPU working 🎉
-        workers=2,         # ↓ reduce workers on Windows to avoid spawn issues
-        cache=True,
-        rect=True,
-        patience=15,
-        optimizer="SGD", lr0=0.01, lrf=0.01, momentum=0.937, weight_decay=0.0005,
-        degrees=10, translate=0.08, scale=0.4, shear=0.1,
-        hsv_h=0.015, hsv_s=0.7, hsv_v=0.4,
-        mosaic=1.0, mixup=0.15, flipud=0.2, fliplr=0.5,
-        project="runs", name="ewaste-3class-v2", exist_ok=False
+    # 1. Load the YOLOv8 Nano model (recommended for speed and efficiency)
+    model = YOLO("yolov8n.pt") 
+
+    # 2. Define and run the training parameters
+    results = model.train(
+        data="datasets/ewaste_v3/data.yaml",        # <--- CONFIRM THIS IS YOUR NEW YAML FILE NAME
+        epochs=150,                   # <--- Increased Epochs for Deeper Learning (from initial 50)
+        imgsz=640,                    # <--- Use 640 or match your Roboflow resize (e.g., 704)
+        
+        # --- Critical GPU/Speed Parameters ---
+        batch=-1,                     # <--- AUTO BATCH SIZE (Maximizes VRAM usage on your 3050)
+        device=0,                     # <--- USE GPU (0 is the device index for your RTX 3050)
+        patience=50,                  # <--- Stops training if no mAP improvement after 50 epochs
+        
+        name="ewaste-3class-v3",       # <--- Unique name for this run
     )
 
 if __name__ == "__main__":

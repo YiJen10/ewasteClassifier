@@ -1,3 +1,7 @@
-import torch
-print(torch.cuda.is_available())      # should be True
-print(torch.cuda.get_device_name(0))  # should show "NVIDIA GeForce RTX 3050 Laptop GPU"
+import torch, sys
+print("python:", sys.executable)
+print("torch:", torch.__version__)
+print("torch location:", torch.__file__)
+print("CUDA available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("GPU name:", torch.cuda.get_device_name(0))
