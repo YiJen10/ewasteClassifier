@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E-Waste Detection Prototype (Tabs)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .card { background: white; box-shadow: 0 10px 25px rgba(0,0,0,0.08); border-radius: 1rem; border-top: 6px solid #10b981; }
+        .tab-button { padding: 0.75rem 1.5rem; border-radius: 0.5rem 0.5rem 0 0; font-weight: 600; cursor: pointer; transition: background-color 0.2s ease; border: 1px solid #d1d5db; border-bottom: none; margin-bottom: -1px; }
+        .tab-button.active { background-color: white; color: #10b981; border-color: #d1d5db; border-bottom: 1px solid white; z-index: 10;}
+        .tab-button:not(.active) { background-color: #e5e7eb; color: #4b5563; }
+        .tab-button:not(.active):hover { background-color: #d1d5db; }
+        .tab-content { border: 1px solid #d1d5db; border-radius: 0 0 0.5rem 0.5rem; padding: 1.5rem; background-color: white;}
+        .mode-panel { display: none; }
+        .mode-panel.active { display: block; }
+        #liveFeed, #snapResultImage, #uploadResultImage { max-width: 100%; height: auto; border-radius: 0.75rem; background-color: #e5e7eb; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin: 0 auto; display: block; }
+        .status-badge { padding: 0.25rem 0.75rem; border-radius: 9999px; font-weight: 600; font-size: 0.875rem; display: inline-block; }
+        button:disabled, a.disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #10b981; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 1rem auto; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Responsive */
+        @media (max-width: 768px) { .card { margin: 1rem; } }
+    </style>
+</head>
+<body class="p-4 sm:p-8 min-h-screen">
+
+    <div class="w-full max-w-5xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-extrabold text-gray-800">E-Waste Triage Detector (V3)</h1>
+            <p class="text-lg text-gray-500 mt-2">Live Detection & Image Upload</p>
+        </header>
+
+        <!-- Main Card -->
+        <div class="card p-4 sm:p-8">
+            <div class="flex flex-col md:flex-row md:space-x-8">
+                <!-- Main Content Area (Left on Desktop) -->
+                <div class="md:w-3/4">
+                    <!-- Tab Buttons -->
+                    <div class="flex border-b border-gray-300">
+                        <button id="tabLiveSnap" class="tab-button active" onclick="switchMode('liveSnap')">Live Camera + Snap</button>
+                        <button id="tabUpload" class="tab-button" onclick="switchMode('upload')">Upload Image</button>
+                    </div>
+
+                    <!-- Tab Content Area -->
+                    <div class="tab-content">
+                        <!-- Live Camera + Snap Panel -->
+                        <div id="panelLiveSnap" class="mode-panel active text-center">
+                            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Live Detection Feed</h2>
+                            <!-- FIX: Add base URL to live feed src -->
+                            <img id="liveFeed" src="http://127.0.0.1:5000/live_feed" alt="Live E-Waste Detection Stream" class="mb-4">
+
+                            <button id="snapButton" onclick="snapLivePhoto()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg shadow transition duration-200 mt-4">
+                                Snap Current Frame
+                            </button>
+                            <div class="loader" id="snapLoader"></div>
+                            <h3 class="text-xl font-semibold mt-6 mb-2 text-gray-600 hidden" id="snapResultTitle">Snapped Frame Result:</h3>
+                            <img id="snapResultImage" src="" alt="Snapped Photo Result" class="mt-2 hidden">
+                            <a id="downloadSnapLink" href="#" download="snap_result.jpg" class="mt-3 inline-block bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg text-sm shadow transition duration-200 hidden">
+                                Download Snap Result
+                            </a>
+                            <p id="snapError" class="text-red-600 mt-2 text-sm hidden"></p>
+                        </div>
+
+                        <!-- Upload Image Panel -->
+                        <div id="panelUpload" class="mode-panel text-center">
+                            <h2 class="text-2xl font-semibold mb-4 text-gray-700">Upload Image for Detection</h2>
+                            <input type="file" id="fileInput" accept="image/jpeg, image/png, image/webp" class="block w-full max-w-md mx-auto text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 mb-4 cursor-pointer"/>
+                            <button id="uploadButton" onclick="uploadImage()" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 px-6 rounded-lg shadow transition duration-200" disabled>
+                                Upload & Detect
+                            </button>
+                             <div class="loader" id="uploadLoader"></div>
+                             <h3 class="text-xl font-semibold mt-6 mb-2 text-gray-600 hidden" id="uploadResultTitle">Uploaded Image Result:</h3>
+                            <img id="uploadResultImage" src="" alt="Uploaded Image Result" class="mt-2 hidden">
+                            <a id="downloadUploadLink" href="#" download="upload_result.jpg" class="mt-3 inline-block bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg text-sm shadow transition duration-200 hidden">
+                                Download Upload Result
+                            </a>
+                            <p id="uploadError" class="text-red-600 mt-2 text-sm hidden"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Panel (Right on Desktop) -->
+                <div class="md:w-1/4 mt-8 md:mt-0 md:border-l md:pl-8 border-gray-200">
+                    <h2 class="text-xl font-semibold mb-4 text-gray-700 border-b pb-2 border-gray-200">System Status</h2>
+                    <div id="status-panel" class="space-y-3 text-sm">
+                        <p class="font-medium text-gray-600">Model:<br><span id="status-model-load" class="status-badge bg-yellow-100 text-yellow-800">Checking...</span></p>
+                        <p class="font-medium text-gray-600">Compute:<br><span id="status-cuda" class="status-badge bg-gray-100 text-gray-800">---</span></p>
+                        <p class="font-medium text-gray-600">Webcam:<br><span id="status-camera" class="status-badge bg-gray-100 text-gray-800">-</span></p>
+                        <div class="pt-3 border-t border-gray-100">
+                            <h3 class="font-semibold text-gray-600 mb-1">Thresholds:</h3>
+                            <p class="text-xs text-gray-700">Conf: <span id="status-conf" class="font-bold">0.00</span> | IoU: <span id="status-iou" class="font-bold">0.00</span></p>
+                        </div>
+                        <div class="pt-3 border-t border-gray-100">
+                            <h3 class="font-semibold text-gray-600 mb-1">Model Metrics (v3):</h3>
+                            <p class="text-xs text-gray-700">P: <span class="font-bold text-emerald-600">0.956</span> | R: <span class="font-bold text-emerald-600">0.940</span> | mAP@.5: <span class="font-bold text-emerald-600">0.968</span></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="text-center text-sm text-gray-500 mt-8">
+             <p>FYP E-Waste Classifier Prototype | Teoh Yi Jen | YOLOv8n, Flask, OpenCV</p>
+        </footer>
+    </div>
+
+    <script>
+        // Get references to elements
+        const snapButton = document.getElementById('snapButton');
+        const uploadButton = document.getElementById('uploadButton');
+        const fileInput = document.getElementById('fileInput');
+        const snapLoader = document.getElementById('snapLoader');
+        const uploadLoader = document.getElementById('uploadLoader');
+        const snapResultImage = document.getElementById('snapResultImage');
+        const uploadResultImage = document.getElementById('uploadResultImage');
+        const snapError = document.getElementById('snapError');
+        const uploadError = document.getElementById('uploadError');
+        const snapResultTitle = document.getElementById('snapResultTitle');
+        const uploadResultTitle = document.getElementById('uploadResultTitle');
+        const liveFeedImg = document.getElementById('liveFeed');
+        const downloadSnapLink = document.getElementById('downloadSnapLink');
+        const downloadUploadLink = document.getElementById('downloadUploadLink');
+        let currentMode = 'liveSnap';
+        // FIX: Define base URL for fetch requests
+        const baseURL = 'http://127.0.0.1:5000';
+
+
+        // --- Mode Switching ---
+        function switchMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`tab${mode.charAt(0).toUpperCase() + mode.slice(1)}`).classList.add('active');
+            document.querySelectorAll('.mode-panel').forEach(panel => panel.classList.remove('active'));
+            document.getElementById(`panel${mode.charAt(0).toUpperCase() + mode.slice(1)}`).classList.add('active');
+
+            if (mode === 'liveSnap' && liveFeedImg) {
+                 // FIX: Add base URL
+                 liveFeedImg.src = `${baseURL}/live_feed?` + new Date().getTime();
+            }
+
+            // Reset UI only if NOT switching to that specific mode
+            if (mode !== 'liveSnap') resetSnapUI();
+            if (mode !== 'upload') resetUploadUI(); // Always reset upload unless switching TO it
+
+            if (mode === 'upload') {
+                // Ensure button state is correct when switching TO upload
+                uploadButton.disabled = !fileInput.files || fileInput.files.length === 0;
+            }
+        }
+
+        // --- Helper Functions to Reset UI ---
+        function resetSnapUI() {
+            snapLoader.style.display = 'none';
+            snapResultImage.classList.add('hidden');
+            snapResultTitle.classList.add('hidden');
+            snapError.classList.add('hidden');
+            downloadSnapLink.classList.add('hidden');
+            downloadSnapLink.href = '#';
+        }
+        function resetUploadUI() {
+            uploadLoader.style.display = 'none';
+            uploadResultImage.classList.add('hidden');
+            uploadResultTitle.classList.add('hidden');
+            uploadError.classList.add('hidden');
+            downloadUploadLink.classList.add('hidden');
+            downloadUploadLink.href = '#';
+            // DO NOT CLEAR fileInput.value here
+            // uploadButton.disabled = true; // Button state handled by change listener
+        }
+
+
+        // --- Snap Live Photo Function ---
+        async function snapLivePhoto() {
+            snapButton.disabled = true;
+            resetSnapUI(); // Clear previous results first
+            snapLoader.style.display = 'block';
+
+            try {
+                 // FIX: Add base URL
+                const response = await fetch(`${baseURL}/snap_live`, { method: 'POST' });
+                if (!response.ok) throw new Error(`Server error: ${response.statusText} (${response.status})`);
+                const data = await response.json();
+                if (data.image_base64 && data.image_url) {
+                    snapResultImage.src = data.image_base64;
+                    snapResultImage.classList.remove('hidden');
+                    snapResultTitle.classList.remove('hidden');
+                     // FIX: Add base URL to download link if necessary (though relative might work now)
+                    downloadSnapLink.href = data.image_url; // Assuming Flask serves static files relative to root
+                    downloadSnapLink.classList.remove('hidden');
+                } else {
+                    throw new Error(data.error || 'Server returned invalid data.');
+                }
+            } catch (error) {
+                console.error('Error snapping live photo:', error);
+                snapError.textContent = `Detection failed: ${error.message}`;
+                snapError.classList.remove('hidden');
+            } finally {
+                snapButton.disabled = false;
+                snapLoader.style.display = 'none';
+            }
+        }
+
+        // --- Upload Image Function ---
+        async function uploadImage() {
+            if (!fileInput.files || fileInput.files.length === 0) return;
+            uploadButton.disabled = true;
+            // Call resetUploadUI HERE before starting the upload process
+            resetUploadUI();
+            uploadLoader.style.display = 'block';
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            try {
+                 // FIX: Add base URL
+                const response = await fetch(`${baseURL}/upload`, { method: 'POST', body: formData });
+                if (!response.ok) throw new Error(`Server error: ${response.statusText} (${response.status})`);
+                const data = await response.json();
+                 if (data.image_url) {
+                    // FIX: Add base URL to result image source if necessary
+                    uploadResultImage.src = data.image_url + '?' + new Date().getTime(); // Assuming Flask serves static files relative to root
+                    uploadResultImage.classList.remove('hidden');
+                    uploadResultTitle.classList.remove('hidden');
+                    // FIX: Add base URL to download link if necessary
+                    downloadUploadLink.href = data.image_url; // Assuming Flask serves static files relative to root
+                    downloadUploadLink.classList.remove('hidden');
+                } else {
+                     throw new Error(data.error || 'Server returned no image URL.');
+                }
+            } catch (error) {
+                console.error('Error uploading image:', error);
+                uploadError.textContent = `Detection failed: ${error.message}`;
+                uploadError.classList.remove('hidden');
+            } finally {
+                 // Re-enable button AFTER upload attempt (success or fail)
+                 // But keep it disabled if no file is selected (handled by change listener)
+                uploadButton.disabled = !fileInput.files || fileInput.files.length === 0;
+                uploadLoader.style.display = 'none';
+            }
+        }
+
+        // **FIXED**: Enable upload button and clear results ONLY when a NEW file is selected
+        fileInput.addEventListener('change', () => {
+            uploadButton.disabled = !fileInput.files || fileInput.files.length === 0;
+            // Clear previous upload results when a new file is selected
+            uploadResultImage.classList.add('hidden');
+            uploadResultImage.src = "";
+            uploadResultTitle.classList.add('hidden');
+            downloadUploadLink.classList.add('hidden');
+            uploadError.classList.add('hidden');
+        });
+
+        // --- Status Update Function ---
+        function updateStatus() {
+             // FIX: Add base URL
+             fetch(`${baseURL}/status`)
+                .then(response => response.ok ? response.json() : Promise.reject('Network response was not ok.'))
+                .then(data => {
+                    document.getElementById('status-model-load').textContent = data.model_loaded ? 'Ready' : 'Load Failed';
+                    document.getElementById('status-model-load').className = `status-badge ${data.model_loaded ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`;
+                    document.getElementById('status-cuda').textContent = data.cuda_available ? `GPU (RTX 3050)` : 'CPU Only';
+                    document.getElementById('status-cuda').className = `status-badge ${data.cuda_available ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`;
+                    document.getElementById('status-camera').textContent = data.camera_index > -1 ? `Index ${data.camera_index}` : 'Error/Off';
+                    document.getElementById('status-camera').className = `status-badge ${data.camera_index > -1 ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'}`;
+                    document.getElementById('status-conf').textContent = data.conf.toFixed(2);
+                    document.getElementById('status-iou').textContent = data.iou.toFixed(2);
+                })
+                .catch(error => {
+                    console.error('Error fetching status:', error);
+                    document.getElementById('status-model-load').textContent = 'Server Offline';
+                    document.getElementById('status-model-load').className = 'status-badge bg-red-100 text-red-800';
+                     // Clear other fields if server is down
+                    document.getElementById('status-cuda').textContent = '---';
+                    document.getElementById('status-cuda').className = 'status-badge bg-gray-100 text-gray-800';
+                    document.getElementById('status-camera').textContent = '-';
+                     document.getElementById('status-camera').className = 'status-badge bg-gray-100 text-gray-800';
+
+                });
+        }
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            switchMode('liveSnap');
+            updateStatus();
+            setInterval(updateStatus, 5000);
+        });
+
+    </script>
+</body>
+</html>
