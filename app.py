@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image # For handling uploads
 
 # --- Configuration ---
-MODEL_PATH = "runs/ewaste-3class-v3/weights/best.pt" 
+MODEL_PATH = "runs/ewaste-3class-v6/weights/best.pt" 
 CONF_THRESHOLD = 0.40  
 IOU_THRESHOLD = 0.45   
 UPLOAD_FOLDER = 'uploads' 
