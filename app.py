@@ -41,16 +41,6 @@ try:
 except Exception as e:
     print(f"Error loading YOLO model: {e}")
 
-# Helpers
-def readb64_and_decode(base64_str):
-    if "," in base64_str:
-        base64_str = base64_str.split(",")[1]
-    decoded = base64.b64decode(base64_str)
-    img = Image.open(io.BytesIO(decoded)).convert("RGB")
-    frame = np.array(img)
-    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-    return frame
-
 # --- Camera Initialization ---
 cap = None
 def initialize_camera():
@@ -110,35 +100,6 @@ def index():
 @app.route('/live_feed')
 def live_feed():
     return Response(generate_frames_live(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-@app.route('/predict', methods=['POST'])
-def predict():
-    """
-    Accepts JSON: { "image": "data:image/jpeg;base64,..." }
-    Returns JSON: { boxes: [ {xyxy, conf, class, label}], time: float }
-    """
-    data = request.get_json(force=True, silent=True)
-    if not data or 'image' not in data:
-        return jsonify({'error': 'No image provided'}), 400
-    try:
-        img_b64 = data['image']
-        frame = readb64_and_decode(img_b64)
-        start = time.time()
-        results = model(frame, conf=CONF_THRESHOLD, iou=IOU_THRESHOLD, imgsz=640, device=DEVICE, verbose=False)
-        res = results[0]
-        boxes = []
-        if hasattr(res, 'boxes') and res.boxes is not None:
-            for box in res.boxes:
-                xyxy = box.xyxy[0].tolist()
-                conf = float(box.conf[0]) if hasattr(box, 'conf') else float(box.conf)
-                cls = int(box.cls[0]) if hasattr(box, 'cls') else int(box.cls)
-                label = model.names.get(cls, str(cls))
-                boxes.append({"xyxy":[float(x) for x in xyxy],"conf":conf,"class":cls,"label":label})
-        duration = time.time() - start
-        return jsonify({"boxes": boxes, "time": duration})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/snap_live', methods=['POST'])
 def snap_live():
