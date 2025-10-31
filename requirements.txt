@@ -1,5 +1,5 @@
 flask==2.2.5
-ultralytics==8.6.0
+ultralytics==8.2.23
 torch==2.2.0
 opencv-python-headless==4.8.1.76
 numpy==1.26.0
