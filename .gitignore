@@ -6,3 +6,5 @@ runs/ewaste-3class-v3/
 runs/ewaste-3class-v4-with-negatives/
 runs/ewaste-3class-v5/
 results/
+runs/detect/
+runs/predict/
