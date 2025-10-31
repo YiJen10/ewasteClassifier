@@ -129,7 +129,7 @@
                 // 7. Set the path to your model.json file
                 //    This assumes your 'best_web_model' folder is in the same directory
                 //    as this HTML file.
-                const modelPath = './best_web_model/model.json';
+                const modelPath = './best_web_model/model.json?v=1.0';
                 model = await tf.loadGraphModel(modelPath);
 
                 // Warm up the model
