@@ -121,29 +121,20 @@
 
         let model = null;
 
-        // YOLO class list (match training order)
         const classNames = ['Battery', 'Cable', 'PCB'];
         const colors = ['#FF3838', '#FF9D97', '#FF701F'];
+        const modelWidth = 640, modelHeight = 640;
+        const scoreThreshold = 0.3, iouThreshold = 0.5;
 
-        const modelWidth = 640;
-        const modelHeight = 640;
-        const scoreThreshold = 0.3;
-        const iouThreshold = 0.5;
-
-        /** Load the TF.js model */
         async function loadModel() {
             try {
-                const modelPath = './best_web_model/model.json?v=2.0';
+                const modelPath = './best_web_model/model.json?v=3.0';
                 model = await tf.loadGraphModel(modelPath);
                 tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0);
-                console.log('✅ Model loaded');
 
-                // Warm-up call
-                tf.tidy(() => {
-                    const dummy = tf.zeros([1, modelWidth, modelHeight, 3]);
-                    model.execute(dummy);
-                });
-
+                // warm up
+                tf.tidy(() => model.execute(tf.zeros([1, modelWidth, modelHeight, 3])));
+                console.log('✅ Model loaded.');
                 loaderContainer.classList.add('hidden');
             } catch (err) {
                 console.error('❌ Failed to load model:', err);
@@ -151,64 +142,51 @@
             }
         }
 
-        /** Start mobile camera */
         async function startWebcam() {
             try {
-                const constraints = {
-                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-                    audio: false
-                };
+                const constraints = { video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 cameraBtn.classList.add('hidden');
-
                 video.onloadedmetadata = () => {
                     canvas.width = video.clientWidth;
                     canvas.height = video.clientHeight;
-                    console.log(`🎥 Canvas set to ${canvas.width}×${canvas.height}`);
-                    detectFrame();   // start detection loop
+                    detectFrame();
                 };
             } catch (err) {
-                console.error('❌ Camera error:', err);
+                console.error('Camera error:', err);
                 cameraBtn.classList.remove('hidden');
             }
         }
 
-        /** Detection loop */
         async function detectFrame() {
             if (!model) { requestAnimationFrame(detectFrame); return; }
 
             try {
-                const input = tf.tidy(() =>
-                    tf.browser.fromPixels(video)
-                        .resizeBilinear([modelWidth, modelHeight])
-                        .div(255.0)
-                        .expandDims(0)
-                );
+                const input = tf.browser.fromPixels(video)
+                    .resizeBilinear([modelWidth, modelHeight])
+                    .div(255.0)
+                    .expandDims(0);
 
-                // Execute model (static graph → execute(), not executeAsync)
                 const output = model.execute(input);
-
                 const [boxes, scores, classes] = processOutput(output);
 
-                // NMS
                 const indices = await tf.image.nonMaxSuppressionAsync(
                     boxes, scores, 10, iouThreshold, scoreThreshold
                 );
 
-                // Gather chosen results
                 const selBoxes = tf.gather(boxes, indices);
                 const selScores = tf.gather(scores, indices);
                 const selClasses = tf.gather(classes, indices);
 
-                // Convert to arrays BEFORE cleanup
-                const boxesArr = await selBoxes.array();
-                const scoresArr = await selScores.array();
-                const classesArr = await selClasses.array();
+                // ✅ Use synchronous arraySync() instead of async .array()
+                const boxesArr = selBoxes.arraySync();
+                const scoresArr = selScores.arraySync();
+                const classesArr = selClasses.arraySync();
 
                 drawBoxes(boxesArr, scoresArr, classesArr);
 
-                // Cleanup (safe)
+                // ✅ Dispose safely AFTER conversions
                 tf.dispose([input, output, boxes, scores, classes, indices, selBoxes, selScores, selClasses]);
             } catch (err) {
                 console.error('⚠️ Detection error:', err);
@@ -217,30 +195,22 @@
             requestAnimationFrame(detectFrame);
         }
 
-        /** Post-process YOLO output */
         function processOutput(out) {
-            // [1, 7, 8400] → [8400, 7]
             const t = out.transpose([0, 2, 1]).squeeze(0);
             const boxes = t.slice([0, 0], [-1, 4]);
             const classProbs = t.slice([0, 4], [-1, -1]);
             const scores = classProbs.max(1);
             const classes = classProbs.argMax(1);
 
-            // cx, cy, w, h → y1, x1, y2, x2
             const [cx, cy, w, h] = boxes.split([1, 1, 1, 1], 1);
-            const x1 = cx.sub(w.div(2));
-            const y1 = cy.sub(h.div(2));
-            const x2 = cx.add(w.div(2));
-            const y2 = cy.add(h.div(2));
-
-            const finalBoxes = tf.concat([y1, x1, y2, x2], 1);  // fixed typo (x2)
+            const x1 = cx.sub(w.div(2)), y1 = cy.sub(h.div(2)),
+                x2 = cx.add(w.div(2)), y2 = cy.add(h.div(2));
+            const finalBoxes = tf.concat([y1, x1, y2, x2], 1);
             return [finalBoxes, scores, classes];
         }
 
-        /** Draw detections */
         function drawBoxes(boxesArr, scoresArr, classesArr) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
             for (let i = 0; i < boxesArr.length; i++) {
                 const [ymin, xmin, ymax, xmax] = boxesArr[i];
                 const x = xmin * canvas.width;
@@ -258,8 +228,8 @@
                 ctx.strokeRect(x, y, width, height);
 
                 ctx.fillStyle = color;
-                const textW = ctx.measureText(label).width;
-                ctx.fillRect(x, y - 20, textW + 10, 20);
+                const textWidth = ctx.measureText(label).width;
+                ctx.fillRect(x, y - 20, textWidth + 10, 20);
 
                 ctx.fillStyle = '#000';
                 ctx.font = '16px Arial';
@@ -267,7 +237,6 @@
             }
         }
 
-        // Event bindings
         window.addEventListener('load', loadModel);
         cameraBtn.addEventListener('click', startWebcam);
         window.addEventListener('resize', () => {
@@ -277,6 +246,7 @@
             }
         });
     </script>
+
 
 </body>
 
