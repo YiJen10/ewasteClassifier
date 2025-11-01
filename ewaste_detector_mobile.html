@@ -152,10 +152,24 @@
                 video.srcObject = stream;
                 cameraBtn.classList.add('hidden');
                 video.onloadedmetadata = () => {
-                    canvas.width = video.clientWidth;
-                    canvas.height = video.clientHeight;
-                    detectFrame();
+                    // Ensure the video feed is actually streaming frames
+                    function checkReady() {
+                        if (video.videoWidth === 0 || video.videoHeight === 0) {
+                            console.warn('⏳ Waiting for first video frame...');
+                            requestAnimationFrame(checkReady);
+                            return;
+                        }
+
+                        // Once ready, set correct canvas size
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+
+                        console.log(`🎥 Camera ready: ${canvas.width}x${canvas.height}`);
+                        detectFrame();  // start loop safely
+                    }
+                    checkReady();
                 };
+
             } catch (err) {
                 console.error('Camera error:', err);
                 cameraBtn.classList.remove('hidden');
@@ -163,6 +177,11 @@
         }
 
         async function detectFrame() {
+            if (video.videoWidth === 0 || video.videoHeight === 0) {
+                requestAnimationFrame(detectFrame);
+                return;
+            }
+
             if (!model) { requestAnimationFrame(detectFrame); return; }
 
             try {
