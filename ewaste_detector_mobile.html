@@ -131,16 +131,15 @@
 
         async function loadModel() {
             try {
-                const modelPath = './best_web_model/model.json?v=4.0';
+                const modelPath = './best_web_model/model.json?v=4.1';
                 model = await tf.loadGraphModel(modelPath);
 
-                // Optimize WebGL memory
+                // Optimize WebGL memory (these env flags are fine)
                 tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0);
                 tf.env().set('WEBGL_FLUSH_THRESHOLD', 0);
                 tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
-                tf.backend().blockUntilAllKernelsComplete();
 
-                // Warm-up
+                // Warm-up (use execute for static graph)
                 tf.tidy(() => model.execute(tf.zeros([1, modelSize, modelSize, 3])));
                 console.log('✅ Model loaded.');
                 loaderContainer.classList.add('hidden');
@@ -196,16 +195,21 @@
                 const selScores = tf.gather(scores, indices);
                 const selClasses = tf.gather(classes, indices);
 
-                // Convert tensors safely
+                // Convert tensors synchronously
                 const boxesArr = selBoxes.arraySync();
                 const scoresArr = selScores.arraySync();
                 const classesArr = selClasses.arraySync();
 
+                // Draw results
                 drawBoxes(boxesArr, scoresArr, classesArr, ratio, pad);
 
+                // Dispose everything (safe)
                 tf.dispose([inputTensor, output, boxes, scores, classes, indices, selBoxes, selScores, selClasses]);
-                tf.backend().blockUntilAllKernelsComplete();
+
+                // Allow browser / GL to process pending work before next frame
+                await tf.nextFrame();
             } catch (err) {
+                // still ignore spurious 0x0 errors, but log others
                 if (!String(err).includes('0x0')) console.error('⚠️ Detection error:', err);
             }
 
