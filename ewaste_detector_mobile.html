@@ -126,7 +126,7 @@
         const classNames = ['Battery', 'Cable', 'PCB'];
         const colors = ['#FF3838', '#FF9D97', '#FF701F'];
         const modelWidth = 640, modelHeight = 640;
-        const scoreThreshold = 0.25, iouThreshold = 0.45;
+        const scoreThreshold = 0.3, iouThreshold = 0.45;
 
         async function loadModel() {
             try {
@@ -246,29 +246,41 @@
 
 
         function processOutput(out) {
-            // YOLOv8 TFJS output shape: [1, 7, 8400] → [8400, 7]
-            const t = out.squeeze(0).transpose([1, 0]); // from [7, 8400] to [8400, 7]
+            // YOLOv8 TF.js output: [1, 7, 8400]
+            const t = out.squeeze(0).transpose([1, 0]); // → [8400, 7]
 
             // Split into 4 box coords + 3 class scores
-            let [x, y, w, h, conf1, conf2, conf3] = tf.split(t, [1, 1, 1, 1, 1, 1, 1], 1);
+            let [cx, cy, w, h, c1, c2, c3] = tf.split(t, [1, 1, 1, 1, 1, 1, 1], 1);
 
-            // Apply sigmoid to normalize values
-            x = x.sigmoid();
-            y = y.sigmoid();
+            // Apply sigmoid to normalize 0–1
+            cx = cx.sigmoid();
+            cy = cy.sigmoid();
             w = w.sigmoid();
             h = h.sigmoid();
 
-            const classProbs = tf.concat([conf1, conf2, conf3], 1).sigmoid();
+            // Convert coordinates from model scale (0–1 or 0–640) to normalized [0–1]
+            // If model already outputs pixel values (~0–640), divide by 640 to normalize
+            const isLarge = tf.max(cx).dataSync()[0] > 2.0; // heuristic check
+            if (isLarge) {
+                const scale = 640.0; // model image size
+                cx = cx.div(scale);
+                cy = cy.div(scale);
+                w = w.div(scale);
+                h = h.div(scale);
+            }
+
+            // Combine class probabilities
+            const classProbs = tf.concat([c1, c2, c3], 1).sigmoid();
             const scores = classProbs.max(1);
             const classes = classProbs.argMax(1);
 
-            // Convert [cx, cy, w, h] → [y1, x1, y2, x2]
-            const x1 = x.sub(w.div(2));
-            const y1 = y.sub(h.div(2));
-            const x2 = x.add(w.div(2));
-            const y2 = y.add(h.div(2));
-
+            // cx,cy,w,h → y1,x1,y2,x2
+            const x1 = cx.sub(w.div(2));
+            const y1 = cy.sub(h.div(2));
+            const x2 = cx.add(w.div(2));
+            const y2 = cy.add(h.div(2));
             const finalBoxes = tf.concat([y1, x1, y2, x2], 1);
+
             return [finalBoxes, scores, classes];
         }
 
