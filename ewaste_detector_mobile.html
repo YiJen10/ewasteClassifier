@@ -126,7 +126,7 @@
         const classNames = ['Battery', 'Cable', 'PCB'];
         const colors = ['#FF3838', '#FF9D97', '#FF701F'];
         const modelWidth = 640, modelHeight = 640;
-        const scoreThreshold = 0.15, iouThreshold = 0.45;
+        const scoreThreshold = 0.25, iouThreshold = 0.45;
 
         async function loadModel() {
             try {
@@ -246,27 +246,29 @@
 
 
         function processOutput(out) {
-            // Detect if shape is [1, 7, 8400] or [1, 8400, 7]
-            let t = out;
-            if (out.shape[1] < out.shape[2]) {
-                // [1, 7, 8400] → transpose to [8400, 7]
-                t = out.transpose([0, 2, 1]).squeeze(0);
-            } else {
-                // [1, 8400, 7] → just squeeze
-                t = out.squeeze(0);
-            }
+            // YOLOv8 TFJS output shape: [1, 7, 8400] → [8400, 7]
+            const t = out.squeeze(0).transpose([1, 0]); // from [7, 8400] to [8400, 7]
 
-            const boxes = t.slice([0, 0], [-1, 4]);
-            const classProbs = t.slice([0, 4], [-1, -1]).sigmoid();  // normalize
+            // Split into 4 box coords + 3 class scores
+            let [x, y, w, h, conf1, conf2, conf3] = tf.split(t, [1, 1, 1, 1, 1, 1, 1], 1);
+
+            // Apply sigmoid to normalize values
+            x = x.sigmoid();
+            y = y.sigmoid();
+            w = w.sigmoid();
+            h = h.sigmoid();
+
+            const classProbs = tf.concat([conf1, conf2, conf3], 1).sigmoid();
             const scores = classProbs.max(1);
             const classes = classProbs.argMax(1);
 
-            // cx, cy, w, h → x1, y1, x2, y2
-            const [cx, cy, w, h] = boxes.split([1, 1, 1, 1], 1);
-            const x1 = cx.sub(w.div(2)), y1 = cy.sub(h.div(2));
-            const x2 = cx.add(w.div(2)), y2 = cy.add(h.div(2));
-            const finalBoxes = tf.concat([y1, x1, y2, x2], 1);
+            // Convert [cx, cy, w, h] → [y1, x1, y2, x2]
+            const x1 = x.sub(w.div(2));
+            const y1 = y.sub(h.div(2));
+            const x2 = x.add(w.div(2));
+            const y2 = y.add(h.div(2));
 
+            const finalBoxes = tf.concat([y1, x1, y2, x2], 1);
             return [finalBoxes, scores, classes];
         }
 
