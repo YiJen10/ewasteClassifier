@@ -125,9 +125,13 @@
 
         const classNames = ['Battery', 'Cable', 'PCB'];
         const colors = ['#FF3838', '#FF9D97', '#FF701F'];
-        const modelSize = 320;
+        const modelSize = 640;
         const scoreThreshold = 0.3;
         const iouThreshold = 0.5;
+        const constraints = {
+            video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 360 } },
+            audio: false
+        };
 
         async function loadModel() {
             try {
@@ -214,6 +218,7 @@
             }
 
             requestAnimationFrame(detectFrame);
+            await new Promise(r => setTimeout(r, 100));  // ~10 FPS
         }
 
         /* --- Helper: Resize with Letterbox --- */
