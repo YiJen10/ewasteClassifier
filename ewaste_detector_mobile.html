@@ -60,7 +60,7 @@
   <!-- Loader -->
   <div id="loader-container">
     <div class="loader"></div>
-    <p id="loader-text" class="mt-4 text-lg">Loading model...</p>
+    <p id="loader-text" class="mt-4 text-lg">Loading YOLO model...</p>
   </div>
 
   <!-- Main Elements -->
@@ -86,21 +86,22 @@
     const modelSize = 640;
     const scoreThreshold = 0.3;
     const iouThreshold = 0.45;
+    let detecting = false;
 
     /* ------------------ MODEL LOADING ------------------ */
     async function loadModel() {
       try {
         const modelPath = 'best_web_model/model.json';  // relative path
-        loaderText.innerText = 'Loading YOLO model...';
-        model = await tf.loadGraphModel(modelPath);
+        loaderText.innerText = 'Loading YOLOv8n model...';
+        model = await tf.loadGraphModel(modelPath, {fromTFHub: false});
 
-        // Optimize WebGL to reduce memory leaks
+        // WebGL optimizations to reduce memory leaks
         tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0);
         tf.env().set('WEBGL_FLUSH_THRESHOLD', 0);
         tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
         tf.env().set('WEBGL_PACK_DEPTHWISECONV', false);
 
-        // Warm-up pass
+        // Warm-up to allocate GPU memory ahead of time
         tf.tidy(() => model.execute(tf.zeros([1, modelSize, modelSize, 3])));
         console.log('✅ Model loaded successfully');
         loaderContainer.classList.add('hidden');
@@ -115,7 +116,7 @@
       try {
         const constraints = {
           video: {
-            facingMode: { ideal: "environment" }, // back camera on phones
+            facingMode: { ideal: "environment" }, // back camera for phone
             width: { ideal: 640 },
             height: { ideal: 480 }
           },
@@ -128,7 +129,6 @@
 
         video.onloadeddata = () => {
           if (video.videoWidth === 0 || video.videoHeight === 0) {
-            console.warn('⏳ Waiting for first frame...');
             requestAnimationFrame(video.onloadeddata);
             return;
           }
@@ -146,10 +146,8 @@
 
     /* ------------------ DETECTION LOOP ------------------ */
     async function detectFrame() {
-      if (!model) {
-        requestAnimationFrame(detectFrame);
-        return;
-      }
+      if (!model || detecting) return;
+      detecting = true;
 
       try {
         const [inputTensor, scale, pad] = preprocessFrame(video, modelSize);
@@ -164,23 +162,25 @@
         const selScores = tf.gather(scores, indices);
         const selClasses = tf.gather(classes, indices);
 
-        const boxesArr = selBoxes.arraySync();
-        const scoresArr = selScores.arraySync();
-        const classesArr = selClasses.arraySync();
+        const boxesArr = await selBoxes.array();
+        const scoresArr = await selScores.array();
+        const classesArr = await selClasses.array();
 
         drawBoxes(boxesArr, scoresArr, classesArr, scale, pad);
 
-        tf.dispose([inputTensor, output, boxes, scores, classes,
-                    indices, selBoxes, selScores, selClasses]);
-        await tf.nextFrame();
-
+        // Dispose tensors safely
+        tf.dispose([
+          inputTensor, output, boxes, scores, classes,
+          indices, selBoxes, selScores, selClasses
+        ]);
+        await tf.nextFrame(); // flush GPU queue
       } catch (err) {
         if (!String(err).includes('0x0')) console.error('⚠️ Detection error:', err);
       }
 
-      // 100–150 ms delay for smoother FPS on mobile
-      await new Promise(r => setTimeout(r, 120));
-      requestAnimationFrame(detectFrame);
+      detecting = false;
+      // Limit FPS to prevent GPU overload (~5 FPS)
+      setTimeout(() => requestAnimationFrame(detectFrame), 200);
     }
 
     /* ------------------ HELPER FUNCTIONS ------------------ */
@@ -253,6 +253,9 @@
     /* ------------------ INIT ------------------ */
     window.addEventListener('load', loadModel);
     cameraBtn.addEventListener('click', startWebcam);
+
+    // Periodic cleanup (extra safety for long sessions)
+    setInterval(() => { tf.engine().startScope(); tf.engine().endScope(); }, 5000);
   </script>
 </body>
 </html>
