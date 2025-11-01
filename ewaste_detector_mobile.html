@@ -1,305 +1,258 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-    <meta charset="UTF-8">
-    <!-- 1. Viewport tag is CRITICAL for mobile responsiveness -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>E-Waste Detector (Mobile)</title>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>E-Waste Detector (Mobile & Desktop)</title>
 
-    <link rel="icon" href="data:,">
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
 
-    <!-- 2. Load Tailwind CSS for easy, clean styling -->
-    <script src="https://cdn.tailwindcss.com"></script>
-
-    <!-- 3. Load TensorFlow.js -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
-
-    <style>
-        /* Make the app feel more "native" */
-        html,
-        body {
-            height: 100%;
-            overflow: hidden;
-            font-family: 'Inter', sans-serif;
-        }
-
-        body {
-            background-color: #000;
-        }
-
-        /* Custom style to overlay canvas on top of video */
-        #canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 10;
-        }
-
-        #webcam {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            /* Fill the whole screen */
-        }
-
-        /* Simple loader animation */
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        .loader {
-            border: 4px solid rgba(255, 255, 255, 0.3);
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-        }
-
-        /* Full-screen loader overlay */
-        #loader-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            z-index: 99;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: white;
-        }
-
-        /* Button style */
-        #cameraBtn {
-            position: absolute;
-            bottom: 50px;
-            left: 50%;
-            transform: translateX(-50%);
-            z-index: 100;
-        }
-    </style>
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      font-family: 'Inter', sans-serif;
+      background-color: #000;
+    }
+    #webcam, #canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    #loader-container {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 99;
+      color: white;
+    }
+    .loader {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top: 4px solid #10b981;
+      border-radius: 50%;
+      width: 40px; height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #cameraBtn {
+      position: absolute;
+      bottom: 50px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+    }
+  </style>
 </head>
 
 <body class="text-white">
 
-    <!-- Loading Indicator -->
-    <div id="loader-container">
-        <div class="loader"></div>
-        <p id="loader-text" class="mt-4 text-lg">Loading model...</p>
-    </div>
+  <!-- Loader -->
+  <div id="loader-container">
+    <div class="loader"></div>
+    <p id="loader-text" class="mt-4 text-lg">Loading model...</p>
+  </div>
 
-    <!-- Main Content -->
-    <div id="main-content" class="relative w-full h-full">
-        <!-- 
-          4. 'playsinline' is CRITICAL for iOS to prevent fullscreen.
-        -->
-        <video id="webcam" autoplay playsinline muted class="w-full h-full"></video>
-        <canvas id="canvas"></canvas>
-    </div>
+  <!-- Main Elements -->
+  <video id="webcam" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
 
-    <!-- Button to start camera -->
-    <button id="cameraBtn"
-        class="px-6 py-4 bg-blue-600 font-semibold rounded-lg shadow-lg hover:bg-blue-700 transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
-        Start Camera
-    </button>
-    <p id="status" class="hidden"></p> <!-- For debugging -->
+  <button id="cameraBtn"
+          class="px-6 py-4 bg-blue-600 font-semibold rounded-lg shadow-lg hover:bg-blue-700 transition duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+    Start Camera
+  </button>
 
+  <script>
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const loaderContainer = document.getElementById('loader-container');
+    const loaderText = document.getElementById('loader-text');
+    const cameraBtn = document.getElementById('cameraBtn');
 
-    <script>
-        const video = document.getElementById('webcam');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        const loaderContainer = document.getElementById('loader-container');
-        const loaderText = document.getElementById('loader-text');
-        const cameraBtn = document.getElementById('cameraBtn');
+    let model = null;
+    const classNames = ['Battery', 'Cable', 'PCB'];
+    const colors = ['#FF3838', '#FF9D97', '#FF701F'];
+    const modelSize = 640;
+    const scoreThreshold = 0.3;
+    const iouThreshold = 0.45;
 
-        let model = null;
+    /* ------------------ MODEL LOADING ------------------ */
+    async function loadModel() {
+      try {
+        const modelPath = 'best_web_model/model.json';  // relative path
+        loaderText.innerText = 'Loading YOLO model...';
+        model = await tf.loadGraphModel(modelPath);
 
-        const classNames = ['Battery', 'Cable', 'PCB'];
-        const colors = ['#FF3838', '#FF9D97', '#FF701F'];
-        const modelSize = 640;
-        const scoreThreshold = 0.3;
-        const iouThreshold = 0.5;
+        // Optimize WebGL to reduce memory leaks
+        tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0);
+        tf.env().set('WEBGL_FLUSH_THRESHOLD', 0);
+        tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+        tf.env().set('WEBGL_PACK_DEPTHWISECONV', false);
+
+        // Warm-up pass
+        tf.tidy(() => model.execute(tf.zeros([1, modelSize, modelSize, 3])));
+        console.log('✅ Model loaded successfully');
+        loaderContainer.classList.add('hidden');
+      } catch (err) {
+        console.error('❌ Failed to load model:', err);
+        loaderText.innerText = 'Error loading model (see console).';
+      }
+    }
+
+    /* ------------------ CAMERA INIT ------------------ */
+    async function startWebcam() {
+      try {
         const constraints = {
-            video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 360 } },
-            audio: false
+          video: {
+            facingMode: { ideal: "environment" }, // back camera on phones
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          },
+          audio: false
         };
 
-        async function loadModel() {
-            try {
-                const modelPath = './best_web_model/model.json?v=4.1';
-                model = await tf.loadGraphModel(modelPath);
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        cameraBtn.classList.add('hidden');
 
-                // Optimize WebGL memory (these env flags are fine)
-                tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0);
-                tf.env().set('WEBGL_FLUSH_THRESHOLD', 0);
-                tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+        video.onloadeddata = () => {
+          if (video.videoWidth === 0 || video.videoHeight === 0) {
+            console.warn('⏳ Waiting for first frame...');
+            requestAnimationFrame(video.onloadeddata);
+            return;
+          }
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          console.log(`🎥 Camera ready: ${canvas.width}×${canvas.height}`);
+          detectFrame();
+        };
+      } catch (err) {
+        console.error('⚠️ Camera initialization failed:', err);
+        loaderText.innerText = 'Camera access denied or unavailable.';
+        cameraBtn.classList.remove('hidden');
+      }
+    }
 
-                // Warm-up (use execute for static graph)
-                tf.tidy(() => model.execute(tf.zeros([1, modelSize, modelSize, 3])));
-                console.log('✅ Model loaded.');
-                loaderContainer.classList.add('hidden');
-            } catch (err) {
-                console.error('❌ Failed to load model:', err);
-                loaderText.innerText = 'Error loading model. See console.';
-            }
-        }
+    /* ------------------ DETECTION LOOP ------------------ */
+    async function detectFrame() {
+      if (!model) {
+        requestAnimationFrame(detectFrame);
+        return;
+      }
 
-        async function startWebcam() {
-            try {
-                const constraints = {
-                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-                    audio: false
-                };
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
-                video.srcObject = stream;
-                cameraBtn.classList.add('hidden');
+      try {
+        const [inputTensor, scale, pad] = preprocessFrame(video, modelSize);
+        const output = model.execute(inputTensor);
+        const [boxes, scores, classes] = processOutput(output);
 
-                video.onloadeddata = () => {
-                    // Wait until real frame data exists
-                    if (video.videoWidth === 0 || video.videoHeight === 0) {
-                        console.warn('⏳ Waiting for first frame...');
-                        requestAnimationFrame(video.onloadeddata);
-                        return;
-                    }
-                    canvas.width = video.videoWidth;
-                    canvas.height = video.videoHeight;
-                    console.log(`🎥 Camera ready: ${canvas.width}×${canvas.height}`);
-                    detectFrame();
-                };
-            } catch (err) {
-                console.error('Camera error:', err);
-                cameraBtn.classList.remove('hidden');
-            }
-        }
+        const indices = await tf.image.nonMaxSuppressionAsync(
+          boxes, scores, 20, iouThreshold, scoreThreshold
+        );
 
-        async function detectFrame() {
-            if (!model) { requestAnimationFrame(detectFrame); return; }
+        const selBoxes = tf.gather(boxes, indices);
+        const selScores = tf.gather(scores, indices);
+        const selClasses = tf.gather(classes, indices);
 
-            try {
-                // --- Letterbox resize (keep aspect ratio) ---
-                const [inputTensor, ratio, pad] = preprocessFrame(video, modelSize);
+        const boxesArr = selBoxes.arraySync();
+        const scoresArr = selScores.arraySync();
+        const classesArr = selClasses.arraySync();
 
-                const output = model.execute(inputTensor);
-                const [boxes, scores, classes] = processOutput(output);
+        drawBoxes(boxesArr, scoresArr, classesArr, scale, pad);
 
-                const indices = await tf.image.nonMaxSuppressionAsync(
-                    boxes, scores, 10, iouThreshold, scoreThreshold
-                );
+        tf.dispose([inputTensor, output, boxes, scores, classes,
+                    indices, selBoxes, selScores, selClasses]);
+        await tf.nextFrame();
 
-                const selBoxes = tf.gather(boxes, indices);
-                const selScores = tf.gather(scores, indices);
-                const selClasses = tf.gather(classes, indices);
+      } catch (err) {
+        if (!String(err).includes('0x0')) console.error('⚠️ Detection error:', err);
+      }
 
-                // Convert tensors synchronously
-                const boxesArr = selBoxes.arraySync();
-                const scoresArr = selScores.arraySync();
-                const classesArr = selClasses.arraySync();
+      // 100–150 ms delay for smoother FPS on mobile
+      await new Promise(r => setTimeout(r, 120));
+      requestAnimationFrame(detectFrame);
+    }
 
-                // Draw results
-                drawBoxes(boxesArr, scoresArr, classesArr, ratio, pad);
+    /* ------------------ HELPER FUNCTIONS ------------------ */
+    function preprocessFrame(video, size) {
+      const vidW = video.videoWidth, vidH = video.videoHeight;
+      if (vidW === 0 || vidH === 0) return [tf.zeros([1, size, size, 3]), 1, [0, 0]];
 
-                // Dispose everything (safe)
-                tf.dispose([inputTensor, output, boxes, scores, classes, indices, selBoxes, selScores, selClasses]);
+      const scale = Math.min(size / vidW, size / vidH);
+      const newW = Math.round(vidW * scale), newH = Math.round(vidH * scale);
+      const padW = (size - newW) / 2, padH = (size - newH) / 2;
 
-                // Allow browser / GL to process pending work before next frame
-                await tf.nextFrame();
-            } catch (err) {
-                // still ignore spurious 0x0 errors, but log others
-                if (!String(err).includes('0x0')) console.error('⚠️ Detection error:', err);
-            }
+      const img = tf.browser.fromPixels(video)
+        .resizeBilinear([newH, newW])
+        .div(255.0)
+        .pad([[Math.floor(padH), Math.ceil(padH)],
+              [Math.floor(padW), Math.ceil(padW)], [0, 0]])
+        .expandDims(0);
 
-            requestAnimationFrame(detectFrame);
-            await new Promise(r => setTimeout(r, 100));  // ~10 FPS
-        }
+      return [img, scale, [padW, padH]];
+    }
 
-        /* --- Helper: Resize with Letterbox --- */
-        function preprocessFrame(video, size) {
-            const vidW = video.videoWidth, vidH = video.videoHeight;
-            if (vidW === 0 || vidH === 0) return [tf.zeros([1, size, size, 3]), 1, [0, 0]];
+    function processOutput(out) {
+      const t = out.transpose([0, 2, 1]).squeeze(0);
+      const boxes = t.slice([0, 0], [-1, 4]);
+      const classProbs = t.slice([0, 4], [-1, -1]);
+      const scores = classProbs.max(1);
+      const classes = classProbs.argMax(1);
 
-            const scale = Math.min(size / vidW, size / vidH);
-            const newW = Math.round(vidW * scale), newH = Math.round(vidH * scale);
-            const padW = (size - newW) / 2, padH = (size - newH) / 2;
+      const [cx, cy, w, h] = boxes.split([1, 1, 1, 1], 1);
+      const x1 = cx.sub(w.div(2)), y1 = cy.sub(h.div(2)),
+            x2 = cx.add(w.div(2)), y2 = cy.add(h.div(2));
+      const finalBoxes = tf.concat([y1, x1, y2, x2], 1);
+      return [finalBoxes, scores, classes];
+    }
 
-            const img = tf.browser.fromPixels(video)
-                .resizeBilinear([newH, newW])
-                .div(255.0)
-                .pad([[Math.floor(padH), Math.ceil(padH)],
-                [Math.floor(padW), Math.ceil(padW)],
-                [0, 0]])
-                .expandDims(0);
-            return [img, scale, [padW, padH]];
-        }
+    function drawBoxes(boxesArr, scoresArr, classesArr, scale, pad) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.lineWidth = 3;
+      ctx.font = '16px Arial';
 
-        /* --- YOLO Output Processing --- */
-        function processOutput(out) {
-            const t = out.transpose([0, 2, 1]).squeeze(0);
-            const boxes = t.slice([0, 0], [-1, 4]);
-            const classProbs = t.slice([0, 4], [-1, -1]);
-            const scores = classProbs.max(1);
-            const classes = classProbs.argMax(1);
+      for (let i = 0; i < boxesArr.length; i++) {
+        const [y1, x1, y2, x2] = boxesArr[i];
+        const id = classesArr[i];
+        const score = scoresArr[i];
+        const color = colors[id % colors.length];
 
-            const [cx, cy, w, h] = boxes.split([1, 1, 1, 1], 1);
-            const x1 = cx.sub(w.div(2)), y1 = cy.sub(h.div(2)),
-                x2 = cx.add(w.div(2)), y2 = cy.add(h.div(2));
-            const finalBoxes = tf.concat([y1, x1, y2, x2], 1);
-            return [finalBoxes, scores, classes];
-        }
+        // Undo letterbox scaling
+        const bx = (x1 - pad[0]) / scale;
+        const by = (y1 - pad[1]) / scale;
+        const bw = (x2 - x1) / scale;
+        const bh = (y2 - y1) / scale;
 
-        /* --- Draw Boxes --- */
-        function drawBoxes(boxesArr, scoresArr, classesArr, scale, pad) {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            for (let i = 0; i < boxesArr.length; i++) {
-                const [y1, x1, y2, x2] = boxesArr[i];
-                const id = classesArr[i];
-                const score = scoresArr[i];
+        const x = bx * (canvas.width / video.videoWidth);
+        const y = by * (canvas.height / video.videoHeight);
+        const width = bw * (canvas.width / video.videoWidth);
+        const height = bh * (canvas.height / video.videoHeight);
 
-                // Undo letterbox
-                const bx = (x1 - pad[0]) / scale;
-                const by = (y1 - pad[1]) / scale;
-                const bw = (x2 - x1) / scale;
-                const bh = (y2 - y1) / scale;
+        ctx.strokeStyle = color;
+        ctx.strokeRect(x, y, width, height);
 
-                const x = bx * (canvas.width / video.videoWidth);
-                const y = by * (canvas.height / video.videoHeight);
-                const width = bw * (canvas.width / video.videoWidth);
-                const height = bh * (canvas.height / video.videoHeight);
+        const label = `${classNames[id]}: ${(score * 100).toFixed(1)}%`;
+        const tw = ctx.measureText(label).width;
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y - 20, tw + 10, 20);
+        ctx.fillStyle = '#000';
+        ctx.fillText(label, x + 5, y - 5);
+      }
+    }
 
-                const color = colors[id];
-                const label = `${classNames[id]}: ${score.toFixed(2)}`;
-
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 3;
-                ctx.strokeRect(x, y, width, height);
-
-                ctx.fillStyle = color;
-                const tw = ctx.measureText(label).width;
-                ctx.fillRect(x, y - 20, tw + 10, 20);
-                ctx.fillStyle = '#000';
-                ctx.font = '16px Arial';
-                ctx.fillText(label, x + 5, y - 5);
-            }
-        }
-
-        window.addEventListener('load', loadModel);
-        cameraBtn.addEventListener('click', startWebcam);
-        window.addEventListener('resize', () => {
-            if (video.srcObject) {
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-            }
-        });
-    </script>
-
+    /* ------------------ INIT ------------------ */
+    window.addEventListener('load', loadModel);
+    cameraBtn.addEventListener('click', startWebcam);
+  </script>
 </body>
-
 </html>
