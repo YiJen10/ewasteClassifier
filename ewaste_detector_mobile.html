@@ -141,6 +141,8 @@
                 tf.tidy(() => model.execute(tf.zeros([1, modelWidth, modelHeight, 3])));
                 console.log('✅ Model loaded.');
                 loaderContainer.classList.add('hidden');
+                loaderContainer.style.display = 'none';
+
             } catch (err) {
                 console.error('❌ Failed to load model:', err);
                 loaderText.innerText = 'Error loading model. See console.';
@@ -167,7 +169,13 @@
                         canvas.height = video.videoHeight;
 
                         console.log(`🎥 Camera ready: ${canvas.width}x${canvas.height}`);
-                        detectFrame();  // start loop safely
+
+                        // Hide the loader overlay once the camera feed is ready
+                        loaderContainer.classList.add('hidden');
+
+                        // Start detection
+                        detectFrame();
+
                     }
                     checkReady();
                 };
