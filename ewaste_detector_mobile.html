@@ -130,7 +130,10 @@
             try {
                 const modelPath = './best_web_model/model.json?v=3.0';
                 model = await tf.loadGraphModel(modelPath);
+                // Optimize for mobile GPU
                 tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0);
+                tf.env().set('WEBGL_FLUSH_THRESHOLD', 0);
+                tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
 
                 // warm up
                 tf.tidy(() => model.execute(tf.zeros([1, modelWidth, modelHeight, 3])));
@@ -188,6 +191,7 @@
 
                 // ✅ Dispose safely AFTER conversions
                 tf.dispose([input, output, boxes, scores, classes, indices, selBoxes, selScores, selClasses]);
+                tf.backend().blockUntilAllKernelsComplete(); // force GPU sync
             } catch (err) {
                 console.error('⚠️ Detection error:', err);
             }
