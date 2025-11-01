@@ -217,9 +217,6 @@
                 console.error('⚠️ Detection error:', err);
             }
 
-            // cleanup
-            tf.dispose([input, output, boxes, scores, classes, indices, selBoxes, selScores, selClasses]);
-
             if (Math.random() < 0.01) { // roughly every 100 frames
                 const mem = tf.memory();
                 console.log(`🔹 Active tensors: ${mem.numTensors}, GPU mem: ${(mem.numBytes / 1e6).toFixed(1)} MB`);
