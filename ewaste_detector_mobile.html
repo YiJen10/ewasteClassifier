@@ -125,24 +125,25 @@
 
         const classNames = ['Battery', 'Cable', 'PCB'];
         const colors = ['#FF3838', '#FF9D97', '#FF701F'];
-        const modelWidth = 640, modelHeight = 640;
-        const scoreThreshold = 0.3, iouThreshold = 0.45;
+        const modelSize = 640;
+        const scoreThreshold = 0.3;
+        const iouThreshold = 0.5;
 
         async function loadModel() {
             try {
-                const modelPath = './best_web_model/model.json?v=3.0';
+                const modelPath = './best_web_model/model.json?v=4.0';
                 model = await tf.loadGraphModel(modelPath);
-                // Optimize for mobile GPU
+
+                // Optimize WebGL memory
                 tf.env().set('WEBGL_DELETE_TEXTURE_THRESHOLD', 0);
                 tf.env().set('WEBGL_FLUSH_THRESHOLD', 0);
                 tf.env().set('WEBGL_FORCE_F16_TEXTURES', true);
+                tf.backend().blockUntilAllKernelsComplete();
 
-                // warm up
-                tf.tidy(() => model.execute(tf.zeros([1, modelWidth, modelHeight, 3])));
+                // Warm-up
+                tf.tidy(() => model.execute(tf.zeros([1, modelSize, modelSize, 3])));
                 console.log('✅ Model loaded.');
                 loaderContainer.classList.add('hidden');
-                loaderContainer.style.display = 'none';
-
             } catch (err) {
                 console.error('❌ Failed to load model:', err);
                 loaderText.innerText = 'Error loading model. See console.';
@@ -151,35 +152,26 @@
 
         async function startWebcam() {
             try {
-                const constraints = { video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false };
+                const constraints = {
+                    video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: false
+                };
                 const stream = await navigator.mediaDevices.getUserMedia(constraints);
                 video.srcObject = stream;
                 cameraBtn.classList.add('hidden');
-                video.onloadedmetadata = () => {
-                    // Ensure the video feed is actually streaming frames
-                    function checkReady() {
-                        if (video.videoWidth === 0 || video.videoHeight === 0) {
-                            console.warn('⏳ Waiting for first video frame...');
-                            requestAnimationFrame(checkReady);
-                            return;
-                        }
 
-                        // Once ready, set correct canvas size
-                        canvas.width = video.videoWidth;
-                        canvas.height = video.videoHeight;
-
-                        console.log(`🎥 Camera ready: ${canvas.width}x${canvas.height}`);
-
-                        // Hide the loader overlay once the camera feed is ready
-                        loaderContainer.classList.add('hidden');
-
-                        // Start detection
-                        detectFrame();
-
+                video.onloadeddata = () => {
+                    // Wait until real frame data exists
+                    if (video.videoWidth === 0 || video.videoHeight === 0) {
+                        console.warn('⏳ Waiting for first frame...');
+                        requestAnimationFrame(video.onloadeddata);
+                        return;
                     }
-                    checkReady();
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    console.log(`🎥 Camera ready: ${canvas.width}×${canvas.height}`);
+                    detectFrame();
                 };
-
             } catch (err) {
                 console.error('Camera error:', err);
                 cameraBtn.classList.remove('hidden');
@@ -187,125 +179,102 @@
         }
 
         async function detectFrame() {
-            if (video.videoWidth === 0 || video.videoHeight === 0) {
-                requestAnimationFrame(detectFrame);
-                return;
-            }
-
-            if (!model) {
-                requestAnimationFrame(detectFrame);
-                return;
-            }
+            if (!model) { requestAnimationFrame(detectFrame); return; }
 
             try {
-                // Wrap everything in tf.tidy to auto-dispose internal tensors each frame
-                const results = tf.tidy(() => {
-                    const input = tf.browser.fromPixels(video)
-                        .resizeBilinear([modelWidth, modelHeight])
-                        .div(255.0)
-                        .expandDims(0);
+                // --- Letterbox resize (keep aspect ratio) ---
+                const [inputTensor, ratio, pad] = preprocessFrame(video, modelSize);
 
-                    const output = model.execute(input);
-                    console.log('🔍 Output shape:', output.shape);
-                    const [boxes, scores, classes] = processOutput(output);
-
-                    // NMS runs asynchronously, so don't include it inside tidy()
-                    return { boxes, scores, classes };
-                });
+                const output = model.execute(inputTensor);
+                const [boxes, scores, classes] = processOutput(output);
 
                 const indices = await tf.image.nonMaxSuppressionAsync(
-                    results.boxes, results.scores, 10, iouThreshold, scoreThreshold
+                    boxes, scores, 10, iouThreshold, scoreThreshold
                 );
 
-                // gather selected boxes outside tidy (still need them after)
-                const selBoxes = tf.gather(results.boxes, indices);
-                const selScores = tf.gather(results.scores, indices);
-                const selClasses = tf.gather(results.classes, indices);
+                const selBoxes = tf.gather(boxes, indices);
+                const selScores = tf.gather(scores, indices);
+                const selClasses = tf.gather(classes, indices);
 
+                // Convert tensors safely
                 const boxesArr = selBoxes.arraySync();
                 const scoresArr = selScores.arraySync();
                 const classesArr = selClasses.arraySync();
 
-                drawBoxes(boxesArr, scoresArr, classesArr);
+                drawBoxes(boxesArr, scoresArr, classesArr, ratio, pad);
 
-                // Clean up any tensors created outside tidy()
-                tf.dispose([indices, selBoxes, selScores, selClasses]);
-                await tf.nextFrame();
-
-                // Debug memory occasionally
-                if (Math.random() < 0.02) {
-                    const mem = tf.memory();
-                    console.log(`🔹 Active tensors: ${mem.numTensors}, GPU mem: ${(mem.numBytes / 1e6).toFixed(1)} MB`);
-                }
+                tf.dispose([inputTensor, output, boxes, scores, classes, indices, selBoxes, selScores, selClasses]);
+                tf.backend().blockUntilAllKernelsComplete();
             } catch (err) {
-                console.error('⚠️ Detection error:', err);
+                if (!String(err).includes('0x0')) console.error('⚠️ Detection error:', err);
             }
 
             requestAnimationFrame(detectFrame);
         }
 
+        /* --- Helper: Resize with Letterbox --- */
+        function preprocessFrame(video, size) {
+            const vidW = video.videoWidth, vidH = video.videoHeight;
+            if (vidW === 0 || vidH === 0) return [tf.zeros([1, size, size, 3]), 1, [0, 0]];
 
+            const scale = Math.min(size / vidW, size / vidH);
+            const newW = Math.round(vidW * scale), newH = Math.round(vidH * scale);
+            const padW = (size - newW) / 2, padH = (size - newH) / 2;
+
+            const img = tf.browser.fromPixels(video)
+                .resizeBilinear([newH, newW])
+                .div(255.0)
+                .pad([[Math.floor(padH), Math.ceil(padH)],
+                [Math.floor(padW), Math.ceil(padW)],
+                [0, 0]])
+                .expandDims(0);
+            return [img, scale, [padW, padH]];
+        }
+
+        /* --- YOLO Output Processing --- */
         function processOutput(out) {
-            // YOLOv8 TF.js output: [1, 7, 8400]
-            const t = out.squeeze(0).transpose([1, 0]); // → [8400, 7]
-
-            // Split into 4 box coords + 3 class scores
-            let [cx, cy, w, h, c1, c2, c3] = tf.split(t, [1, 1, 1, 1, 1, 1, 1], 1);
-
-            // Apply sigmoid to normalize 0–1
-            cx = cx.sigmoid();
-            cy = cy.sigmoid();
-            w = w.sigmoid();
-            h = h.sigmoid();
-
-            // Convert coordinates from model scale (0–1 or 0–640) to normalized [0–1]
-            // If model already outputs pixel values (~0–640), divide by 640 to normalize
-            const isLarge = tf.max(cx).dataSync()[0] > 2.0; // heuristic check
-            if (isLarge) {
-                const scale = 640.0; // model image size
-                cx = cx.div(scale);
-                cy = cy.div(scale);
-                w = w.div(scale);
-                h = h.div(scale);
-            }
-
-            // Combine class probabilities
-            const classProbs = tf.concat([c1, c2, c3], 1).sigmoid();
+            const t = out.transpose([0, 2, 1]).squeeze(0);
+            const boxes = t.slice([0, 0], [-1, 4]);
+            const classProbs = t.slice([0, 4], [-1, -1]);
             const scores = classProbs.max(1);
             const classes = classProbs.argMax(1);
 
-            // cx,cy,w,h → y1,x1,y2,x2
-            const x1 = cx.sub(w.div(2));
-            const y1 = cy.sub(h.div(2));
-            const x2 = cx.add(w.div(2));
-            const y2 = cy.add(h.div(2));
+            const [cx, cy, w, h] = boxes.split([1, 1, 1, 1], 1);
+            const x1 = cx.sub(w.div(2)), y1 = cy.sub(h.div(2)),
+                x2 = cx.add(w.div(2)), y2 = cy.add(h.div(2));
             const finalBoxes = tf.concat([y1, x1, y2, x2], 1);
-
             return [finalBoxes, scores, classes];
         }
 
-        function drawBoxes(boxesArr, scoresArr, classesArr) {
+        /* --- Draw Boxes --- */
+        function drawBoxes(boxesArr, scoresArr, classesArr, scale, pad) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             for (let i = 0; i < boxesArr.length; i++) {
-                const [ymin, xmin, ymax, xmax] = boxesArr[i];
-                const x = xmin * canvas.width;
-                const y = ymin * canvas.height;
-                const width = (xmax - xmin) * canvas.width;
-                const height = (ymax - ymin) * canvas.height;
-
+                const [y1, x1, y2, x2] = boxesArr[i];
                 const id = classesArr[i];
-                const score = scoresArr[i].toFixed(2);
-                const label = `${classNames[id]}: ${score}`;
+                const score = scoresArr[i];
+
+                // Undo letterbox
+                const bx = (x1 - pad[0]) / scale;
+                const by = (y1 - pad[1]) / scale;
+                const bw = (x2 - x1) / scale;
+                const bh = (y2 - y1) / scale;
+
+                const x = bx * (canvas.width / video.videoWidth);
+                const y = by * (canvas.height / video.videoHeight);
+                const width = bw * (canvas.width / video.videoWidth);
+                const height = bh * (canvas.height / video.videoHeight);
+
                 const color = colors[id];
+                const label = `${classNames[id]}: ${score.toFixed(2)}`;
 
                 ctx.strokeStyle = color;
                 ctx.lineWidth = 3;
                 ctx.strokeRect(x, y, width, height);
 
                 ctx.fillStyle = color;
-                const textWidth = ctx.measureText(label).width;
-                ctx.fillRect(x, y - 20, textWidth + 10, 20);
-
+                const tw = ctx.measureText(label).width;
+                ctx.fillRect(x, y - 20, tw + 10, 20);
                 ctx.fillStyle = '#000';
                 ctx.font = '16px Arial';
                 ctx.fillText(label, x + 5, y - 5);
@@ -316,12 +285,11 @@
         cameraBtn.addEventListener('click', startWebcam);
         window.addEventListener('resize', () => {
             if (video.srcObject) {
-                canvas.width = video.clientWidth;
-                canvas.height = video.clientHeight;
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
             }
         });
     </script>
-
 
 </body>
 
