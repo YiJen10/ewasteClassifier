@@ -184,49 +184,57 @@
                 return;
             }
 
-            if (!model) { requestAnimationFrame(detectFrame); return; }
+            if (!model) {
+                requestAnimationFrame(detectFrame);
+                return;
+            }
 
             try {
-                const input = tf.browser.fromPixels(video)
-                    .resizeBilinear([modelWidth, modelHeight])
-                    .div(255.0)
-                    .expandDims(0);
+                // Wrap everything in tf.tidy to auto-dispose internal tensors each frame
+                const results = tf.tidy(() => {
+                    const input = tf.browser.fromPixels(video)
+                        .resizeBilinear([modelWidth, modelHeight])
+                        .div(255.0)
+                        .expandDims(0);
 
-                const output = model.execute(input);
-                const [boxes, scores, classes] = processOutput(output);
+                    const output = model.execute(input);
+                    const [boxes, scores, classes] = processOutput(output);
+
+                    // NMS runs asynchronously, so don't include it inside tidy()
+                    return { boxes, scores, classes };
+                });
 
                 const indices = await tf.image.nonMaxSuppressionAsync(
-                    boxes, scores, 10, iouThreshold, scoreThreshold
+                    results.boxes, results.scores, 10, iouThreshold, scoreThreshold
                 );
 
-                const selBoxes = tf.gather(boxes, indices);
-                const selScores = tf.gather(scores, indices);
-                const selClasses = tf.gather(classes, indices);
+                // gather selected boxes outside tidy (still need them after)
+                const selBoxes = tf.gather(results.boxes, indices);
+                const selScores = tf.gather(results.scores, indices);
+                const selClasses = tf.gather(results.classes, indices);
 
-                // ✅ Use synchronous arraySync() instead of async .array()
                 const boxesArr = selBoxes.arraySync();
                 const scoresArr = selScores.arraySync();
                 const classesArr = selClasses.arraySync();
 
                 drawBoxes(boxesArr, scoresArr, classesArr);
 
-                // ✅ Dispose safely AFTER conversions
-                tf.dispose([input, output, boxes, scores, classes, indices, selBoxes, selScores, selClasses]);
-                await tf.nextFrame(); // yields control, allows TF.js cleanup naturally
+                // Clean up any tensors created outside tidy()
+                tf.dispose([indices, selBoxes, selScores, selClasses]);
+                await tf.nextFrame();
+
+                // Debug memory occasionally
+                if (Math.random() < 0.02) {
+                    const mem = tf.memory();
+                    console.log(`🔹 Active tensors: ${mem.numTensors}, GPU mem: ${(mem.numBytes / 1e6).toFixed(1)} MB`);
+                }
             } catch (err) {
                 console.error('⚠️ Detection error:', err);
             }
 
-            if (Math.random() < 0.01) { // roughly every 100 frames
-                const mem = tf.memory();
-                console.log(`🔹 Active tensors: ${mem.numTensors}, GPU mem: ${(mem.numBytes / 1e6).toFixed(1)} MB`);
-            }
-
-            // Let TF.js and the browser catch up
-            await tf.nextFrame();
-
             requestAnimationFrame(detectFrame);
         }
+
 
         function processOutput(out) {
             const t = out.transpose([0, 2, 1]).squeeze(0);
