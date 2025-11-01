@@ -126,7 +126,7 @@
         const classNames = ['Battery', 'Cable', 'PCB'];
         const colors = ['#FF3838', '#FF9D97', '#FF701F'];
         const modelWidth = 640, modelHeight = 640;
-        const scoreThreshold = 0.3, iouThreshold = 0.5;
+        const scoreThreshold = 0.15, iouThreshold = 0.45;
 
         async function loadModel() {
             try {
@@ -206,6 +206,7 @@
                         .expandDims(0);
 
                     const output = model.execute(input);
+                    console.log('🔍 Output shape:', output.shape);
                     const [boxes, scores, classes] = processOutput(output);
 
                     // NMS runs asynchronously, so don't include it inside tidy()
@@ -245,16 +246,27 @@
 
 
         function processOutput(out) {
-            const t = out.transpose([0, 2, 1]).squeeze(0);
+            // Detect if shape is [1, 7, 8400] or [1, 8400, 7]
+            let t = out;
+            if (out.shape[1] < out.shape[2]) {
+                // [1, 7, 8400] → transpose to [8400, 7]
+                t = out.transpose([0, 2, 1]).squeeze(0);
+            } else {
+                // [1, 8400, 7] → just squeeze
+                t = out.squeeze(0);
+            }
+
             const boxes = t.slice([0, 0], [-1, 4]);
-            const classProbs = t.slice([0, 4], [-1, -1]);
+            const classProbs = t.slice([0, 4], [-1, -1]).sigmoid();  // normalize
             const scores = classProbs.max(1);
             const classes = classProbs.argMax(1);
 
+            // cx, cy, w, h → x1, y1, x2, y2
             const [cx, cy, w, h] = boxes.split([1, 1, 1, 1], 1);
-            const x1 = cx.sub(w.div(2)), y1 = cy.sub(h.div(2)),
-                x2 = cx.add(w.div(2)), y2 = cy.add(h.div(2));
+            const x1 = cx.sub(w.div(2)), y1 = cy.sub(h.div(2));
+            const x2 = cx.add(w.div(2)), y2 = cy.add(h.div(2));
             const finalBoxes = tf.concat([y1, x1, y2, x2], 1);
+
             return [finalBoxes, scores, classes];
         }
 
