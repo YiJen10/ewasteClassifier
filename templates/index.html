@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>E-Waste Live Detector</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    #infoPanel {
+      transition: max-height 0.3s ease;
+      overflow: hidden;
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50">
+
+  <div class="max-w-4xl mx-auto mt-6 bg-white shadow-md rounded-lg p-4">
+    <h1 class="text-2xl font-bold mb-4 text-center">♻️ E-Waste Live Detection</h1>
+
+    <div class="flex justify-center space-x-4 mb-4">
+      <button id="tabLive" class="bg-blue-600 text-white px-4 py-2 rounded">Live Camera</button>
+      <button id="tabUpload" class="bg-gray-200 px-4 py-2 rounded">Upload</button>
+    </div>
+
+    <!-- Live Camera -->
+    <div id="liveTab">
+      <div class="relative">
+        <!-- Laptop stream -->
+        <img id="laptopFeed" class="rounded w-full border hidden object-contain" style="max-height:85vh;"
+          alt="Laptop Feed">
+
+        <!-- Mobile camera (tiny, still producing frames) -->
+        <video id="mobileVideo" autoplay playsinline muted
+          style="position:absolute;width:1px;height:1px;left:-1px;top:-1px;"></video>
+
+        <!-- Annotated image returned from Flask -->
+        <img id="mobileResult" class="rounded w-full border hidden" alt="Mobile result">
+
+        <button id="snapBtn" class="absolute bottom-3 right-3 bg-green-600 text-white px-3 py-2 rounded shadow">📸
+          Snap</button>
+
+      </div>
+      <div id="liveResult" class="text-center mt-3"></div>
+    </div>
+
+    <!-- Upload -->
+    <div id="uploadTab" class="hidden text-center">
+      <input type="file" id="uploadFile" accept="image/*" class="mt-3 mb-3" />
+      <button id="uploadBtn" class="bg-blue-600 text-white px-3 py-2 rounded">Upload & Detect</button>
+      <div id="uploadResult" class="mt-3"></div>
+    </div>
+
+    <!-- Info Panel -->
+    <div class="mt-4 border-t pt-2 text-sm">
+      <button id="toggleInfo" class="text-blue-600 underline">Toggle Info</button>
+      <div id="infoPanel" class="max-h-0">
+        <p class="text-gray-600 mt-2">
+          💡 Use same Wi-Fi for phone & laptop.<br>
+          🧠 Model: YOLOv8 (Battery, Cable, PCB)<br>
+          📷 Live camera detection (Laptop webcam / Phone camera)
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const tabLive = document.getElementById('tabLive');
+    const tabUpload = document.getElementById('tabUpload');
+    const liveTab = document.getElementById('liveTab');
+    const uploadTab = document.getElementById('uploadTab');
+    const laptopFeed = document.getElementById('laptopFeed');
+    const mobileVideo = document.getElementById('mobileVideo');
+    const mobileResult = document.getElementById('mobileResult');
+    const snapBtn = document.getElementById('snapBtn');
+    const liveResult = document.getElementById('liveResult');
+    const toggleInfo = document.getElementById('toggleInfo');
+    const infoPanel = document.getElementById('infoPanel');
+    const uploadFile = document.getElementById('uploadFile');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const uploadResult = document.getElementById('uploadResult');
+
+    // Tabs
+    tabLive.onclick = () => { liveTab.classList.remove('hidden'); uploadTab.classList.add('hidden'); tabLive.classList.add('bg-blue-600', 'text-white'); tabUpload.classList.remove('bg-blue-600', 'text-white'); };
+    tabUpload.onclick = () => { uploadTab.classList.remove('hidden'); liveTab.classList.add('hidden'); tabUpload.classList.add('bg-blue-600', 'text-white'); tabLive.classList.remove('bg-blue-600', 'text-white'); };
+
+    toggleInfo.onclick = () => { infoPanel.style.maxHeight = infoPanel.style.maxHeight === '0px' ? '200px' : '0px'; };
+
+    async function startMobileCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 720 } }
+        });
+        mobileVideo.srcObject = stream;
+        detectLoop();                          // 🔁 start YOLO detection loop
+      } catch (e) {
+        liveResult.innerHTML = `<p class="text-red-600">Camera access error: ${e.message}</p>`;
+      }
+    }
+
+    async function detectLoop() {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      while (true) {
+        if (mobileVideo.readyState >= 2) {
+          canvas.width = 640;                        // keep constant small size
+          canvas.height = 480;
+          ctx.drawImage(mobileVideo, 0, 0, 640, 480);
+          //canvas.width = mobileVideo.videoWidth;
+          //canvas.height = mobileVideo.videoHeight;
+          //ctx.drawImage(mobileVideo, 0, 0, canvas.width, canvas.height);
+          const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.6));
+          const form = new FormData();
+          form.append('frame', blob, 'frame.jpg');
+          const res = await fetch('/predict_frame', { method: 'POST', body: form });
+          const data = await res.json();
+          if (data.success) {
+            mobileResult.src = data.image;
+            mobileResult.classList.remove('hidden');
+          }
+        }
+        await new Promise(r => setTimeout(r, 250)); // 4 FPS target
+      }
+    }
+
+    // Snap correct source
+    snapBtn.onclick = async () => {
+      const endpoint = isMobile ? '/snap_mobile' : '/snap_live';
+      const res = await fetch(endpoint, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        liveResult.innerHTML = `<p>✅ Saved</p>
+      <img src="${data.file}?t=${Date.now()}" class="rounded mt-2 w-full"/>
+      <a href="${data.file}" download class="text-blue-600 underline">📥 Download</a>`;
+      } else {
+        liveResult.innerHTML = `<p class="text-red-600">${data.error}</p>`;
+      }
+    };
+
+    // Upload detect
+    uploadBtn.onclick = async () => {
+      const file = uploadFile.files[0];
+      if (!file) return alert("Select image first");
+      uploadResult.innerHTML = "Detecting...";
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch('/upload', { method: 'POST', body: form });
+      const data = await res.json();
+      if (data.success) {
+        uploadResult.innerHTML = `<img src="${data.file}?t=${Date.now()}" class="rounded mt-2"/><a href="${data.file}" download class="text-blue-600 underline">📥 Download</a>`;
+      } else {
+        uploadResult.innerHTML = `<p class="text-red-600">${data.error}</p>`;
+      }
+    };
+
+    // Initialize
+    if (isMobile) {
+      laptopFeed.remove();                    // don't even keep the desktop stream element
+      // mobileVideo.classList.add('hidden');       // hide raw preview
+      mobileResult.classList.remove('hidden');   // only show processed
+      startMobileCamera();
+    }
+    else {
+      mobileVideo.remove();                   // don't initialise phone video
+      mobileResult.remove();
+      laptopFeed.src = '/video_feed';         // start flask webcam stream
+      laptopFeed.classList.remove('hidden');
+    }
+  </script>
+
+</body>
+
+</html>

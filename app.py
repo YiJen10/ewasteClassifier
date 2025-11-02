@@ -184,6 +184,6 @@ def serve_result_image(filename):
 if __name__ == '__main__':
     initialize_camera() 
     print("\n\n--- Starting Flask Web Server (Download Feature) ---")
-    print(f"Access prototype at: http://127.0.0.1:5000/")
+    print(f"Access prototype at: http://127.0.0.1:3000/")
     print("Press Ctrl+C to stop.")
-    app.run(debug=False, threaded=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, threaded=True, host='0.0.0.0', port=3000)
