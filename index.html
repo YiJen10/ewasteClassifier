@@ -49,8 +49,7 @@
                         <div id="panelLiveSnap" class="mode-panel active text-center">
                             <h2 class="text-2xl font-semibold mb-4 text-gray-700">Live Detection Feed</h2>
                             <!-- FIX: Add base URL to live feed src -->
-                            <img id="liveFeed" src="http://127.0.0.1:5000/live_feed" alt="Live E-Waste Detection Stream" class="mb-4">
-
+                            <img id="liveFeed" src="/live_feed" alt="Live E-Waste Detection Stream" class="mb-4">
                             <button id="snapButton" onclick="snapLivePhoto()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-6 rounded-lg shadow transition duration-200 mt-4">
                                 Snap Current Frame
                             </button>
@@ -124,7 +123,7 @@
         const downloadUploadLink = document.getElementById('downloadUploadLink');
         let currentMode = 'liveSnap';
         // FIX: Define base URL for fetch requests
-        const baseURL = 'http://127.0.0.1:5000';
+        const baseURL = '';
 
 
         // --- Mode Switching ---

@@ -1,0 +1,33 @@
+Inference Summary
+
+Generated at: 2025-11-07 02:49:12
+
+Device: Laptop
+
+  Samples: 50
+
+  Avg pre processing: 9.08 ms
+
+  Avg inference: 25.43 ms
+
+  Avg post processing: 0.33 ms
+
+  Avg total: 34.85 ms
+
+  Avg FPS: 28.69
+
+
+Device: Mobile
+
+  Samples: 50
+
+  Avg pre processing: 29.23 ms
+
+  Avg inference: 109.62 ms
+
+  Avg post processing: 0.10 ms
+
+  Avg total: 138.96 ms
+
+  Avg FPS: 7.20
+
