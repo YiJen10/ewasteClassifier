@@ -2,16 +2,10 @@ from ultralytics import YOLO
 import torch
 
 # --- Configuration ---
-# NOTE: The model path MUST be updated after your training completes.
-MODEL_PATH = "runs/ewaste-3class-v3/weights/best.pt" 
-
-# Set the path to your Roboflow YAML file for validation
-# This file contains the path to your 'test' folder
-DATA_YAML_PATH = "datasets/ewaste_v3/data.yaml" 
-
-# The names of your classes (based on common YOLO convention)
-# Adjust these if your Roboflow names are different (e.g., '0': 'Battery', '1': 'Cable', '2': 'PCB')
-CLASS_NAMES = ['Battery', 'Cable', 'PCB'] 
+MODEL_PATH = "runs/ewaste-3class-v10/weights/best.pt" 
+DATA_YAML_PATH = "datasets/ewaste_v9/data.yaml" 
+# ADDED: Define your output file name
+OUTPUT_FILE = "evaluation_report.txt" 
 
 # --- Metric Check Logic ---
 def check_final_metrics():
@@ -25,61 +19,94 @@ def check_final_metrics():
         return
 
     # 2. Run the validation mode on the entire test set
-    print("\nStarting evaluation on the Test Set (This may take a few minutes on the GPU)...")
+    print("\nStarting evaluation on the Test Set...")
     
-    # Running validation calculates P, R, F1, and mAP for overall and per-class performance.
     metrics = model.val(
-        data=DATA_YAML_PATH,  # Uses the test set defined in the YAML file
-        imgsz=640,            # Match training resolution
-        split='test',         # Explicitly run on the Test split
-        device=0,             # Use GPU
-        save_json=False,      # Set to True if you want a detailed JSON output file
-        conf=0.001,           # Low confidence to calculate the full PR curve
-        iou=0.60              # Standard IOU for COCO-style metrics
+        data=DATA_YAML_PATH, 
+        imgsz=640,          
+        split='test',       
+        device=0,           
+        save_json=False,    
+        conf=0.001,         
+        iou=0.60            
     )
 
-# 3. Print Overall Results (Project Targets)
-    print("\n" + "="*70)
-    print("           ✨ V3 MODEL OVERALL PERFORMANCE METRICS ✨")
-    print("="*70)
-    print(f"Target Precision: >= 0.85 | Target Recall: >= 0.80 | Target mAP@0.5: >= 0.85")
-    print("-" * 70)
+    # 3. Open the output file to start writing
+    print(f"\nWriting results to {OUTPUT_FILE}...")
+    with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
     
-    # We use the printed 'all' row values for the summary
-    print(f"OVERALL Precision (P): {metrics.box.mp:.4f}")
-    print(f"OVERALL Recall (R):    {metrics.box.mr:.4f}")
-    print(f"OVERALL mAP@0.5:       {metrics.box.map50:.4f}")
-    print(f"OVERALL mAP@0.5:0.95:  {metrics.box.map:.4f}")
-    print("="*70)
-
-    # 4. Print Per-Class Results (FIXED)
-    print("\n" + "="*70)
-    print("        📊 PER-CLASS mAP@0.5 BREAKDOWN (Crucial for Balance) 📊")
-    print("="*70)
-
-    # FIX: Use metrics.box.ap50 which returns the AP@0.5 for each class (a NumPy array)
-    map50_per_class = metrics.box.ap50 
-    
-    # Class order is inferred from the original YAML/training run
-    # If your YAML defines classes in a different order, adjust CLASS_NAMES list
-    CLASS_NAMES = ['Battery', 'Cable', 'PCB'] 
-    
-    # Print header
-    print(f"{'Class':<10}{'mAP@0.5':>10}")
-    print("-" * 20)
-    
-    # Print results for each class
-    for i, class_name in enumerate(CLASS_NAMES):
-        if i < len(map50_per_class):
-            # Check if the value is a scalar before formatting
-            score = map50_per_class[i] if isinstance(map50_per_class[i], (float, int)) else map50_per_class[i].item()
-            print(f"{class_name:<10}{score:>10.4f}")
+        # 4. Print & Write Overall Results (Project Targets)
+        s1 = "\n" + "="*70
+        s2 = "               ✨ V7 MODEL OVERALL PERFORMANCE METRICS ✨"
+        s3 = "="*70
+        s4 = "Target Precision: >= 0.85 | Target Recall: >= 0.80 | Target mAP@0.5: >= 0.85"
+        s5 = "-" * 70
         
-    print("="*70)
+        print(s1); f.write(s1 + "\n")
+        print(s2); f.write(s2 + "\n")
+        print(s3); f.write(s3 + "\n")
+        print(s4); f.write(s4 + "\n")
+        print(s5); f.write(s5 + "\n")
+        
+        # We use the printed 'all' row values for the summary
+        line_p = f"OVERALL Precision (P): {metrics.box.mp:.4f}"
+        line_r = f"OVERALL Recall (R):    {metrics.box.mr:.4f}"
+        line_m50 = f"OVERALL mAP@0.5:       {metrics.box.map50:.4f}"
+        line_map = f"OVERALL mAP@0.5:0.95:  {metrics.box.map:.4f}"
+        s6 = "="*70
+        
+        print(line_p); f.write(line_p + "\n")
+        print(line_r); f.write(line_r + "\n")
+        print(line_m50); f.write(line_m50 + "\n")
+        print(line_map); f.write(line_map + "\n")
+        print(s6); f.write(s6 + "\n")
+
+        # 5. Print & Write Per-Class Detailed Results
+        s7 = "\n" + "="*70
+        s8 = "                   📊 DETAILED PER-CLASS METRICS 📊"
+        s9 = "="*70
+        
+        print(s7); f.write(s7 + "\n")
+        print(s8); f.write(s8 + "\n")
+        print(s9); f.write(s9 + "\n")
+
+        # Get the map of class names {0: 'Battery', 1: 'Cable', 2: 'PCB'}
+        class_names_map = metrics.names
+
+        # Get the per-class metric arrays
+        per_class_precision = metrics.box.p
+        per_class_recall = metrics.box.r
+        per_class_map50 = metrics.box.ap50
+        per_class_map_full = metrics.box.ap # This is mAP@0.5:0.95
+
+        # Print header
+        table_head = f"{'Class':<15}{'Precision':>10}{'Recall':>10}{'mAP@0.5':>10}{'mAP@.5-.95':>12}"
+        table_sep = "-" * 57
+        
+        print(table_head); f.write(table_head + "\n")
+        print(table_sep); f.write(table_sep + "\n")
+        
+        # Loop through each class and print its metrics
+        for i, class_name in class_names_map.items():
+            # Get the metrics for class 'i'
+            p = per_class_precision[i]
+            r = per_class_recall[i]
+            ap50 = per_class_map50[i]
+            ap = per_class_map_full[i]
+            
+            # Format the row
+            row = f"{class_name:<15}{p:>10.4f}{r:>10.4f}{ap50:>10.4f}{ap:>12.4f}"
+            
+            # Print and write the row
+            print(row); f.write(row + "\n")
+            
+        s10 = "="*70
+        print(s10); f.write(s10 + "\n")
+
+    print(f"\n✅ Successfully saved evaluation results to {OUTPUT_FILE}")
 
 
 if __name__ == '__main__':
-    # Ensure you are running this within your active VENV and CUDA is available
     if not torch.cuda.is_available():
         print("FATAL ERROR: CUDA not available. Please ensure your VENV is active.")
     else:

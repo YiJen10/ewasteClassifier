@@ -94,14 +94,14 @@ def write_summary():
     print("="*50 + "\n")
 
 # Ensure the summary is written on exit
-atexit.register(write_summary)
+# atexit.register(write_summary)
 
 app = Flask(__name__)
 
 # ============================
 # Model + Folder Configuration
 # ============================
-MODEL_PATH = "runs/ewaste-3class-v6/weights/best.pt"
+MODEL_PATH = "runs/ewaste-3class-v10/weights/best.pt"
 RESULT_DIR = "static/results"
 os.makedirs(RESULT_DIR, exist_ok=True)
 
@@ -165,20 +165,20 @@ def video_feed():
             t2_post = time.time()
 
             # Call performance logger
-            log_inference(
-                device="Laptop",
-                pre_ms=(t1_inf - t0_pre) * 0.25,      # approximate pre-processing time (25%)
-                infer_ms=(t1_inf - t0_pre) * 0.70,    # main inference
-                post_ms=(t2_post - t1_inf) * 0.05,    # minor post process
-                num_detections=len(results[0].boxes)
-            )
+            # log_inference(
+            #     device="Laptop",
+            #     pre_ms=(t1_inf - t0_pre) * 0.25,      # approximate pre-processing time (25%)
+            #     infer_ms=(t1_inf - t0_pre) * 0.70,    # main inference
+            #     post_ms=(t2_post - t1_inf) * 0.05,    # minor post process
+            #     num_detections=len(results[0].boxes)
+            # )
 
             # Compute average FPS every 50 frames
-            if len(frame_times) % 50 == 0:
-                avg_infer = np.mean(frame_times)
-                fps = 1 / avg_infer
-                print(f"[Laptop] Average Inference Time: {avg_infer:.3f}s | ~{fps:.2f} FPS")
-                frame_times = []  # reset for next 50-frame batch
+            # if len(frame_times) % 50 == 0:
+            #     avg_infer = np.mean(frame_times)
+            #     fps = 1 / avg_infer
+            #     print(f"[Laptop] Average Inference Time: {avg_infer:.3f}s | ~{fps:.2f} FPS")
+            #     frame_times = []  # reset for next 50-frame batch
 
             last_frame = annotated
 
@@ -223,13 +223,13 @@ def predict_frame():
         t2_post = time.time()
 
         # Log to terminal and CSV
-        log_inference(
-            device="Mobile",
-            pre_ms=(t1_inf - t0_pre) * 0.20,
-            infer_ms=(t1_inf - t0_pre) * 0.75,
-            post_ms=(t2_post - t1_inf) * 0.05,
-            num_detections=len(results[0].boxes)
-        )
+        # log_inference(
+        #     device="Mobile",
+        #     pre_ms=(t1_inf - t0_pre) * 0.20,
+        #     infer_ms=(t1_inf - t0_pre) * 0.75,
+        #     post_ms=(t2_post - t1_inf) * 0.05,
+        #     num_detections=len(results[0].boxes)
+        # )
         
         mobile_last_frame = annotated
 

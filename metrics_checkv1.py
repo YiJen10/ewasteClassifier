@@ -1,8 +1,8 @@
 from ultralytics import YOLO
 
-model = YOLO("runs/ewaste-3class/weights/best.pt")
+model = YOLO("runs/ewaste-3class-v6/weights/best.pt")
 metrics = model.val(
-    data="datasets/ewaste/data.yaml",
+    data="datasets/ewaste_v5/data.yaml",
     imgsz=640,
     split="test",
     conf=0.001,  # to build full PR curves

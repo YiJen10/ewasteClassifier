@@ -1,0 +1,55 @@
+
+======================================================================
+               ✨ V6 MODEL OVERALL PERFORMANCE METRICS ✨
+======================================================================
+Target Precision: >= 0.85 | Target Recall: >= 0.80 | Target mAP@0.5: >= 0.85
+----------------------------------------------------------------------
+OVERALL Precision (P): 0.9485
+OVERALL Recall (R):    0.9276
+OVERALL mAP@0.5:       0.9643
+OVERALL mAP@0.5:0.95:  0.8228
+======================================================================
+
+======================================================================
+                   📊 DETAILED PER-CLASS METRICS 📊
+======================================================================
+Class           Precision    Recall   mAP@0.5  mAP@.5-.95
+---------------------------------------------------------
+Battery            0.9266    0.9068    0.9446      0.7833
+Cable              0.9279    0.9060    0.9608      0.7490
+PCB                0.9909    0.9701    0.9877      0.9362
+======================================================================
+
+Inference Summary
+
+Generated at: 2025-11-07 02:49:12
+
+Device: Laptop
+
+  Samples: 50
+
+  Avg pre processing: 9.08 ms
+
+  Avg inference: 25.43 ms
+
+  Avg post processing: 0.33 ms
+
+  Avg total: 34.85 ms
+
+  Avg FPS: 28.69
+
+
+Device: Mobile
+
+  Samples: 50
+
+  Avg pre processing: 29.23 ms
+
+  Avg inference: 109.62 ms
+
+  Avg post processing: 0.10 ms
+
+  Avg total: 138.96 ms
+
+  Avg FPS: 7.20
+

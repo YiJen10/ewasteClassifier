@@ -1,0 +1,133 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>E-Waste Mobile Client (Server infer)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin:0; background:#000; color:#fff; font-family: Inter, sans-serif; }
+    #video, #resultImg { width:100%; height: auto; display:block; }
+    #overlay { position:absolute; left:0; right:0; top:0; text-align:center; padding:8px; z-index:20;}
+    #controls { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:30;}
+    .btn { padding:10px 16px; border-radius:8px; background:#10b981; color:#fff; font-weight:600; }
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    <div id="status">Loading...</div>
+  </div>
+
+  <video id="video" autoplay playsinline muted></video>
+  <img id="resultImg" style="display:none;" />
+
+  <div id="controls">
+    <button id="startBtn" class="btn">Start Camera</button>
+    <button id="snapBtn" class="btn" style="background:#2563eb; margin-left:8px">One Snap</button>
+    <label style="margin-left:8px; font-size:14px">
+      <input id="autoToggle" type="checkbox" checked> Auto-send
+    </label>
+  </div>
+
+  <script>
+    // Config
+    const SERVER_BASE = ''; // empty -> same origin. Change if needed (e.g., http://192.168.x.y:5000)
+    const SEND_INTERVAL_MS = 800; // send frame every ~800 ms (tune for perf)
+    const MAX_DIM = 800; // resize longest side before sending to server to reduce bandwidth
+
+    const video = document.getElementById('video');
+    const resultImg = document.getElementById('resultImg');
+    const status = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const snapBtn = document.getElementById('snapBtn');
+    const autoToggle = document.getElementById('autoToggle');
+
+    let stream = null;
+    let isSending = false;
+    let sendLoop = null;
+
+    function setStatus(txt) { status.innerText = txt; }
+
+    async function startCamera() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        video.srcObject = stream;
+        setStatus('Camera ready');
+        startBtn.disabled = true;
+      } catch (err) {
+        console.error(err);
+        setStatus('Camera access error: ' + (err.message || err));
+      }
+    }
+
+    function captureFrameToBlob() {
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if (!vw || !vh) return null;
+      const canvas = document.createElement('canvas');
+      // scale to reduce bytes
+      const scale = Math.min(1, MAX_DIM / Math.max(vw, vh));
+      canvas.width = Math.round(vw * scale);
+      canvas.height = Math.round(vh * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.78));
+    }
+
+    async function sendFrameOnce() {
+      if (!stream) { setStatus('Camera not started'); return; }
+      if (isSending) return;
+      isSending = true;
+      setStatus('Sending frame...');
+      try {
+        const blob = await captureFrameToBlob();
+        if (!blob) { setStatus('No frame'); isSending=false; return; }
+        const form = new FormData();
+        form.append('frame', blob, 'frame.jpg');
+        const resp = await fetch(`${SERVER_BASE}/predict`, { method:'POST', body: form });
+        if (!resp.ok) {
+          const txt = await resp.text();
+          setStatus('Server error: ' + resp.status);
+          console.error('server error:', resp.status, txt);
+          isSending=false;
+          return;
+        }
+        const j = await resp.json();
+        if (j.success && j.image_url) {
+          resultImg.src = j.image_url + '?t=' + Date.now();
+          resultImg.style.display = 'block';
+          setStatus(`Detections: ${j.detections ? j.detections.length : 0}`);
+        } else {
+          setStatus('No result from server');
+          console.warn('predict returned', j);
+        }
+      } catch (err) {
+        console.error(err);
+        setStatus('Network/Server error');
+      } finally {
+        isSending = false;
+      }
+    }
+
+    function startAutoSend() {
+      if (sendLoop) clearInterval(sendLoop);
+      sendLoop = setInterval(() => {
+        if (autoToggle.checked) sendFrameOnce();
+      }, SEND_INTERVAL_MS);
+    }
+
+    // UI hooks
+    startBtn.addEventListener('click', async () => { await startCamera(); startAutoSend(); });
+    snapBtn.addEventListener('click', sendFrameOnce);
+    autoToggle.addEventListener('change', () => { if (autoToggle.checked) startAutoSend(); });
+
+    // If you want to reach server on different host: update SERVER_BASE e.g. 'http://192.168.0.10:5000'
+    // If you host Flask on laptop and open laptop IP on phone, keep SERVER_BASE empty (same origin), or set to your laptop IP.
+
+    // Auto start for debugging (comment out if you prefer manual start)
+    // startCamera().then(() => startAutoSend());
+  </script>
+</body>
+</html>
